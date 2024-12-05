@@ -1,5 +1,5 @@
 #Dependencies
-libraries <- c("ggplot2", "dplyr", "lubridate","zoo","ctsmr")
+libraries <- c("ggplot2", "dplyr", "lubridate","zoo","Metrics")
 lapply(libraries, library, character.only = TRUE)
 
 #Auxiliar functions
@@ -529,7 +529,7 @@ hourly_error_correlation <- function(df, target_hour){
 }
 
 
-create_RX_df <- function(df, cols, prev_obs){
+create_RX_df <- function(df, prev_obs){
   df_nuevo <- df
   for (i in 1:prev_obs) {
     df_nuevo <- df_nuevo %>%
