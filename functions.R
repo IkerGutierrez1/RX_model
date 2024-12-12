@@ -529,11 +529,21 @@ hourly_error_correlation <- function(df, target_hour){
 }
 
 
-create_RX_df <- function(df, prev_obs){
+create_RX_df <- function(df, prev_obs) {
   df_nuevo <- df
+  col_names <- names(df)
+  remove <- c("timestamp","t")
+  col_names <- col_names[! col_names %in% remove]
+  
+  
   for (i in 1:prev_obs) {
+    # Identificar las columnas originales (que no terminan en _i-1)
+    columnas_originales <- names(df_nuevo)[!grepl(paste0("_", i - 1, "$"), names(df_nuevo))]
+    
+    # Crear nuevas columnas basadas en las originales
     df_nuevo <- df_nuevo %>%
-      mutate(across(everything(), ~lag(., i), .names = "{.col}_{i}"))
+      mutate(across(all_of(col_names), ~lag(., i), .names = "{.col}_{i}"))
   }
-  return (df_nuevo)
+  
+  return(df_nuevo)
 }

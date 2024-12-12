@@ -42,7 +42,7 @@ output_var <- "yTi"
 
 #Basic parameters and df preparation
 sampling_freq <- 60
-previous_hours <- 1
+previous_hours <- 0
 prev_observations <- previous_hours*60/sampling_freq
 df_RX <- create_RX_df(df_A, prev_observations) 
 
@@ -172,5 +172,97 @@ if (j==0){
     }
   }
 }
+
+
+#Plots
+df_plot <- df_A[-(1:prev_observations),]
+df_plot <- df_plot %>%
+  mutate(Ti_pred = Ti_pred)  
+
+# Graficar las dos series frente a timestamp
+p <- ggplot(df_plot, aes(x = timestamp)) +
+  geom_line(aes(y = yTi, color = "yTi"), linewidth = 1) +  
+  geom_point(aes(y = Ti_pred, color = "Ti_pred"), size = 1) +  
+  labs(
+    x = "Timestamp",
+    y = "Temperature",
+    color = "Serie"
+  ) +
+  theme_minimal() +
+  scale_color_manual(values = c("yTi" = "blue", "Ti_pred" = "red"))  
+
+p
+
+residuals <- arx$residuals
+
+df_plot_residuals <- df_A[-(1:prev_observations),] %>%
+  mutate(residuals = residuals)  
+
+
+p_res <- ggplot(df_plot_residuals, aes(x = timestamp, y = residuals)) +
+  geom_point(color = "blue", size = 1) + 
+  labs(
+    title = "Gráfico de Residuals frente a Timestamp",
+    x = "Timestamp",
+    y = "Residuals"
+  ) +
+  theme_minimal()
+
+p_res
+
+
+
+#---------------------------------------------------------
+
+#Optimize problem intead of lm
+#Function for optimization
+ll_lm <- function(par, X){
+
+  beta_Te <- par[1]
+  beta_Rs <- par[2]
+  sigma <- par[3]
+  intercept <- par[4]
+  #Residual (Change function betwwen () for other models and change predict)
+  R <- X$yTi - (intercept + beta_Te*X$Te + beta_Rs*X$Rs) 
+  #Minimize the negative to maxime log
+  - sum(dnorm(R, mean = 0, sigma, log = TRUE))
+}
+
+df_opt <- na.omit(df_RX)
+#Use optim to minimize
+mle_par <- optim(fn = ll_lm,
+                 par = c(1,0,sd(df_opt$yTi),10),
+                 X = df_opt)
+
+coeff <- mle_par$par
+
+#Predict
+df_opt$Ti_pred <- coeff[1]*df_opt$Te + coeff[2]*df_opt$Rs + coeff[4]
+#Rsiduals
+df_opt$res <- df_opt$yTi - df_opt$Ti_pred
+
+#Residual analysis
+mean_res <- mean(df_opt$res)
+std_res <- sd(df_opt$res)
+R_sqr <- 1 - ((sum(df_opt$res^2))/(sum((df_opt$yTi-mean(df_opt$yTi))^2)))
+
+#Plot prediction
+start_date <- as.Date("2023-05-08")
+end_date <- as.Date("2023-05-15")
+
+start_date <- as.Date("2023-08-07")
+end_date <- as.Date("2023-08-15")
+
+
+df_plot <- df_opt[df_opt$timestamp >= start_date & df_opt$timestamp <= end_date, ]
+
+p <- ggplot(df_plot, aes(x = timestamp)) + 
+  geom_line(aes(y = yTi, color = "yTi")) + 
+  geom_line(aes(y = Ti_pred, color = "Ti_pred"), linetype = "dashed") + 
+  geom_point(aes(y = Ti_pred, color = "Ti_pred")) +
+  labs(x = "Timestamp", y = "Temperature (ºC)", title = "yTi and Ti_pred") + 
+  scale_color_manual(name = "Source", values = c("yTi" = "blue", "Ti_pred" = "red")) +
+  theme_minimal() +  
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
 
 
