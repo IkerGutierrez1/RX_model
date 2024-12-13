@@ -90,7 +90,7 @@ for (i in 1:length(arx$coefficients)){
     max_p_value<-a[["coefficients"]][i,4]
   }
 }
-mean_res<-mean(arx$residuals) #No valor absoluto?
+mean_res<-mean(arx$residuals) #No cuadrado??
 std_res<-sd(arx$residuals)
 
 
@@ -217,7 +217,9 @@ p_res
 #Optimize problem intead of lm
 #Function for optimization
 ll_lm <- function(par, X){
-
+  
+  cat("Evaluando parámetros:", par, "\n")
+  
   beta_Te <- par[1]
   beta_Rs <- par[2]
   sigma <- par[3]
@@ -231,38 +233,67 @@ ll_lm <- function(par, X){
 df_opt <- na.omit(df_RX)
 #Use optim to minimize
 mle_par <- optim(fn = ll_lm,
-                 par = c(1,0,sd(df_opt$yTi),10),
-                 X = df_opt)
+                 par = c(0,0,sd(df_opt$yTi),10),
+                 X = df_opt,
+                 method = "L-BFGS-B",
+                 lower = c(0, 0, 0, -Inf), #Negative numbers do not always work
+                 upper = c(2.5, 2.5, Inf, Inf),) #Make then more restictive for future models
 
 coeff <- mle_par$par
+coeff_names <- c("Te","Rs","sigma","icep")
+
+coeff_string <- paste(
+  paste(coeff_names, coeff, sep = "\t"),
+  collapse = "\n"                        
+)
 
 #Predict
 df_opt$Ti_pred <- coeff[1]*df_opt$Te + coeff[2]*df_opt$Rs + coeff[4]
+formula <- "y = coeff[1]*df_opt$Te + coeff[2]*df_opt$Rs + coeff[4]" #Only use to identify the results
 #Rsiduals
 df_opt$res <- df_opt$yTi - df_opt$Ti_pred
 
 #Residual analysis
-mean_res <- mean(df_opt$res)
+MSE <- mean((df_opt$res)^2)
 std_res <- sd(df_opt$res)
 R_sqr <- 1 - ((sum(df_opt$res^2))/(sum((df_opt$yTi-mean(df_opt$yTi))^2)))
 
+
+#Save results
+save_dir <- "output/predictions/"
+model_name <- "Lag0_Te_Rs/"
+
+file_path <- paste0(save_dir, model_name) 
+if (!dir.exists(file_path)) {
+  dir.create(file_path, recursive = TRUE)
+}
+
+#Save model summary
+cat(paste0("Formula: ", formula,
+           "\n\nMSE: \t\t", MSE,
+           "\nSTD res: \t", std_res,
+           "\nR^2: \t\t", R_sqr,
+           "\n\n",coeff_string), file = paste0(file_path,"model_summary.txt"))
+
 #Plot prediction
-start_date <- as.Date("2023-05-08")
-end_date <- as.Date("2023-05-15")
+start_dates <- c("2023-05-08","2023-08-07")
+end_dates <- c("2023-05-15","2023-08-15")
 
-start_date <- as.Date("2023-08-07")
-end_date <- as.Date("2023-08-15")
+for (i in 1:length(start_dates)){
+  df_plot <- df_opt[df_opt$timestamp >= start_dates[i] & df_opt$timestamp <= end_dates[i], ]
+
+  p <- ggplot(df_plot, aes(x = timestamp)) + 
+    geom_line(aes(y = yTi, color = "yTi")) + 
+    geom_line(aes(y = Ti_pred, color = "Ti_pred"), linetype = "dashed") + 
+    geom_point(aes(y = Ti_pred, color = "Ti_pred")) +
+    labs(x = "Timestamp", y = "Temperature (ºC)", title = "yTi and Ti_pred") + 
+    scale_color_manual(name = "Source", values = c("yTi" = "blue", "Ti_pred" = "red")) +
+    theme_bw() +  
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+  
+  ggsave(paste0(file_path,"weekly_plot_",i,".png"), plot = p, width = 6, height = 4, dpi = 300)}
 
 
-df_plot <- df_opt[df_opt$timestamp >= start_date & df_opt$timestamp <= end_date, ]
 
-p <- ggplot(df_plot, aes(x = timestamp)) + 
-  geom_line(aes(y = yTi, color = "yTi")) + 
-  geom_line(aes(y = Ti_pred, color = "Ti_pred"), linetype = "dashed") + 
-  geom_point(aes(y = Ti_pred, color = "Ti_pred")) +
-  labs(x = "Timestamp", y = "Temperature (ºC)", title = "yTi and Ti_pred") + 
-  scale_color_manual(name = "Source", values = c("yTi" = "blue", "Ti_pred" = "red")) +
-  theme_minimal() +  
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
 
 
