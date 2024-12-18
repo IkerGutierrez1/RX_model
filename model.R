@@ -42,7 +42,7 @@ output_var <- "yTi"
 
 #Basic parameters and df preparation
 sampling_freq <- 60
-previous_hours <- 0
+previous_hours <- 6
 prev_observations <- previous_hours*60/sampling_freq
 df_RX <- create_RX_df(df_A, prev_observations) 
 
@@ -218,38 +218,58 @@ p_res
 #Function for optimization
 ll_lm <- function(par, X){
   
-  cat("Evaluando parámetros:", par, "\n")
+  #cat("Parameter evaluation:", par, "\n")
   
   beta_Te <- par[1]
-  beta_Rs <- par[2]
-  sigma <- par[3]
-  intercept <- par[4]
+  beta_Te_1 <- par[2]
+  beta_yTi_2 <- par[3]
+  beta_Te_2 <- par[4]
+  beta_yTi_3 <- par[5]
+  beta_Te_3 <- par[6]
+
+  sigma <- par[7]
+  intercept <- par[8]
   #Residual (Change function betwwen () for other models and change predict)
-  R <- X$yTi - (intercept + beta_Te*X$Te + beta_Rs*X$Rs) 
+  R <- X$yTi -(intercept+beta_Te*X$Te  + beta_Te_1*X$Te_1  + beta_yTi_2*X$yTi_2 + beta_Te_2*X$Te_2 +
+                beta_yTi_3*X$yTi_3 + beta_Te_3*X$Te_3)
   #Minimize the negative to maxime log
   - sum(dnorm(R, mean = 0, sigma, log = TRUE))
 }
 
 df_opt <- na.omit(df_RX)
+coeff_names <- c("Te","Rs","AHU","yTi_1","Te_1","Rs_1","AHU_1","yTi_2","Te_2","Rs_2","AHU_2","yTi_3","Te_3","Rs_3","AHU_3","sigma","icep")
+coeff_names <- c("Te","Te_1","yTi_2","Te_2","yTi_3","Te_3","sigma","icep")
+
+#Bounds
+lower = c(-0.5, -0.5,-0.5, -0.5, -0.5, -0.5, -0.5, 0.1,-50)
+upper = c(0.5, 0.5,0.5, 0.5, 0.5, 0.5, 0.5, Inf,50)
+inital_cond <- c(0.25,0.25,0.25,0.25,0.25,0.25,0.25,sd(df_opt$yTi),0)
+
 #Use optim to minimize
 mle_par <- optim(fn = ll_lm,
-                 par = c(0,0,sd(df_opt$yTi),10),
+                 par = inital_cond,
                  X = df_opt,
                  method = "L-BFGS-B",
-                 lower = c(0, 0, 0, -Inf), #Negative numbers do not always work
-                 upper = c(2.5, 2.5, Inf, Inf),) #Make then more restictive for future models
+                 lower = lower, #Negative numbers do not always work
+                 upper = upper, #Make then more restictive for future models
+                 control = list(maxit = 20000))
 
 coeff <- mle_par$par
-coeff_names <- c("Te","Rs","sigma","icep")
+print(paste("Finished optim convergence: ",mle_par$convergence))
 
+head <- "name\tvalue \tinitial\tlower\tupper\n"
 coeff_string <- paste(
-  paste(coeff_names, coeff, sep = "\t"),
+  paste(coeff_names, coeff, inital_cond, lower, upper, sep = "\t"),
   collapse = "\n"                        
 )
+coeff_string <- paste(head, coeff_string)
 
 #Predict
-df_opt$Ti_pred <- coeff[1]*df_opt$Te + coeff[2]*df_opt$Rs + coeff[4]
-formula <- "y = coeff[1]*df_opt$Te + coeff[2]*df_opt$Rs + coeff[4]" #Only use to identify the results
+df_opt$Ti_pred <- coeff[1]*df_opt$Te + coeff[2]*df_opt$Te_1 + coeff[3]*df_opt$yTi_2 + coeff[4]*df_opt$Te_2+ 
+  coeff[5]*df_opt$yTi_3 + coeff[6]*df_opt$Te_3 +coeff[8]
+
+formula <- "X$yTi -(intercept + beta_Te*X$Te  + beta_Te_1*X$Te_1  + beta_yTi_2*X$yTi_2 + beta_Te_2*X$Te_2 +
+                beta_yTi_3*X$yTi_3 + beta_Te_3*X$Te_3)" #Only use to identify the results
 #Rsiduals
 df_opt$res <- df_opt$yTi - df_opt$Ti_pred
 
@@ -261,7 +281,7 @@ R_sqr <- 1 - ((sum(df_opt$res^2))/(sum((df_opt$yTi-mean(df_opt$yTi))^2)))
 
 #Save results
 save_dir <- "output/predictions/"
-model_name <- "Lag0_Te_Rs/"
+model_name <- "Lag3_Te_yt_2/"
 
 file_path <- paste0(save_dir, model_name) 
 if (!dir.exists(file_path)) {
@@ -277,7 +297,7 @@ cat(paste0("Formula: ", formula,
 
 #Plot prediction
 start_dates <- c("2023-05-08","2023-08-07")
-end_dates <- c("2023-05-15","2023-08-15")
+end_dates <- c("2023-05-15","2023-08-14")
 
 for (i in 1:length(start_dates)){
   df_plot <- df_opt[df_opt$timestamp >= start_dates[i] & df_opt$timestamp <= end_dates[i], ]
@@ -285,7 +305,7 @@ for (i in 1:length(start_dates)){
   p <- ggplot(df_plot, aes(x = timestamp)) + 
     geom_line(aes(y = yTi, color = "yTi")) + 
     geom_line(aes(y = Ti_pred, color = "Ti_pred"), linetype = "dashed") + 
-    geom_point(aes(y = Ti_pred, color = "Ti_pred")) +
+    geom_point(aes(y = Ti_pred, color = "º")) +
     labs(x = "Timestamp", y = "Temperature (ºC)", title = "yTi and Ti_pred") + 
     scale_color_manual(name = "Source", values = c("yTi" = "blue", "Ti_pred" = "red")) +
     theme_bw() +  
